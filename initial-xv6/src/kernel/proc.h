@@ -1,3 +1,10 @@
+// Priority queues for MLFQ implementation
+struct myMLFQ{
+  struct proc* procs[NPROC];
+  int last;
+};
+
+
 // Saved registers for kernel context switches.
 struct context
 {
@@ -97,6 +104,13 @@ struct proc
 {
   struct spinlock lock;
 
+  // Scheduling
+  int priority;               // Queue number of process
+  int queueEnteredAt;         // Time when process entered the queue
+  int queued;                 // Is the process in the queue
+  int timeToNextQueue;        // Time to next queue
+  int timeInQueue;            // Time allowed in queue
+
   // p->lock must be held when using these:
   enum procstate state; // Process state
   void *chan;           // If non-zero, sleeping on chan
@@ -119,6 +133,18 @@ struct proc
   uint rtime;                  // How long the process ran for
   uint ctime;                  // When was the process created
   uint etime;                  // When did the process exited
+  int readcount;               // How many reads have been mde (getreadcount())
+  
+  
+  // Sigalarm
+  uint handler;
+  int interval;
+  int tickscurrently;
+  int signalstatus;
+  struct trapframe *trapframealarm;
+
+
 };
 
 extern struct proc proc[NPROC];
+

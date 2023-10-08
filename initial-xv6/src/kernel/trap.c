@@ -10,6 +10,8 @@ struct spinlock tickslock;
 uint ticks;
 
 extern char trampoline[], uservec[], userret[];
+// MLFQ scheduler
+extern struct myMLFQ mlfq[NPROC];
 
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
@@ -80,7 +82,86 @@ void usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2)
+  {
+    // Get the current CPU structure
+    struct cpu *c = mycpu();
+
+// If MLFQ scheduling is defined, print the priority of the current process
+#ifdef MLFQ
+    printf("%d ", c->proc->priority);
+#endif
+
+    // Print the creation time and PID of the current process
+    printf("%d %d \n", c->proc->ctime, c->proc->pid);
+
+    // Check if the process has a positive interval for signaling
+    if (p->interval > 0)
+    {
+      // Check if the signal status is inactive (0)
+      if (p->signalstatus == 0)
+      {
+        // Increment the ticks counter for the current interval
+        p->tickscurrently += 1;
+
+        // Check if the accumulated ticks reach the signaling interval
+        if (p->interval <= p->tickscurrently)
+        {
+          // Reset the ticks counter
+          p->tickscurrently = 0;
+
+          // Activate the signal status
+          p->signalstatus = 1;
+
+          // Allocate space for saving the trap frame for the alarm
+          p->trapframealarm = kalloc();
+
+          // Copy the current trap frame to the allocated space for the alarm
+          memmove(p->trapframealarm, p->trapframe, PGSIZE);
+
+          // Set the program counter of the trap frame to the signal handler
+          p->trapframe->epc = p->handler;
+        }
+      }
+    }
+
+// If DEFAULT scheduling is defined, yield the processor
+#ifdef DEFAULT
     yield();
+#endif
+
+// If MLFQ scheduling is defined, perform MLFQ-specific operations
+#ifdef MLFQ
+    // Initialize a flag to determine whether to reschedule the process
+    int scheduleProcessAgain = 0;
+
+    // Iterate through all priority levels up to the current process's priority
+    for (int i = 0; i < p->priority; i++)
+    {
+      // Check if there are any processes in the current priority queue
+      if (mlfq[i].last != -1)
+      {
+        // Set the flag to reschedule the process and break the loop
+        scheduleProcessAgain = 1;
+        break;
+      }
+    }
+
+    // Check if the time to the next queue has expired
+    if (p->timeToNextQueue <= 0)
+    {
+      // If the priority is less than 3, increment the priority
+      if (p->priority < 3)
+        p->priority++;
+
+      // Set the flag to reschedule the process
+      scheduleProcessAgain = 1;
+    }
+
+    // If the flag is set, yield the processor
+    if (scheduleProcessAgain)
+      yield();
+#endif
+  }
 
   usertrapret();
 }
@@ -153,7 +234,45 @@ void kerneltrap()
 
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
+  {
+#ifdef DEFAULT
     yield();
+#endif
+#ifdef MLFQ
+    // Initialize a flag to determine whether to reschedule the process
+    int scheduleProcessAgain = 0;
+
+    // Get the current process structure
+    struct proc *p = myproc();
+
+    // Iterate through all priority levels up to the current process's priority
+    for (int i = 0; i < p->priority; i++)
+    {
+      // Check if there are any processes in the current priority queue
+      if (mlfq[i].last != -1)
+      {
+        // Set the flag to reschedule the process and break the loop
+        scheduleProcessAgain = 1;
+        break;
+      }
+    }
+
+    // Check if the time to the next queue has expired
+    if (p->timeToNextQueue <= 0)
+    {
+      // If the priority is less than 3, increment the priority
+      if (p->priority < 3)
+        p->priority++;
+
+      // Set the flag to reschedule the process
+      scheduleProcessAgain = 1;
+    }
+
+    // If the flag is set, yield the processor
+    if (scheduleProcessAgain)
+      yield();
+#endif
+  }
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.

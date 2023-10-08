@@ -108,3 +108,48 @@ sys_waitx(void)
     return -1;
   return ret;
 }
+
+// getreadcount()
+
+uint64
+sys_getreadcount(void)
+{
+  return myproc()->readcount;
+}
+
+// sigalarm()
+
+uint64
+sys_sigalarm(void)
+{
+  uint64 handler2;
+  argaddr(1,&handler2);
+
+  int interval;
+  argint(0,&interval);
+
+  struct proc* p = myproc();
+
+  p->interval=interval;
+  p->handler=handler2;
+
+  return 0;
+}
+
+// sigreturn()
+
+uint64
+sys_sigreturn(void)
+{
+  struct proc* p = myproc();
+
+  memmove(p->trapframe,p->trapframealarm,PGSIZE);
+  kfree(p->trapframealarm);
+
+  p->tickscurrently=0;
+  p->signalstatus=0;
+  p->trapframealarm=0;
+
+  usertrapret();
+  return 0;
+}

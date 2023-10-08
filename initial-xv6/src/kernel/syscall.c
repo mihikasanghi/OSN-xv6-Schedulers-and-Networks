@@ -102,6 +102,9 @@ extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_waitx(void);
+extern uint64 sys_getreadcount(void);
+extern uint64 sys_sigalarm(void);
+extern uint64 sys_sigreturn(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -128,7 +131,12 @@ static uint64 (*syscalls[])(void) = {
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
 [SYS_waitx]   sys_waitx,
+[SYS_getreadcount]   sys_getreadcount,
+[SYS_sigalarm]    sys_sigalarm,
+[SYS_sigreturn]    sys_sigreturn,
 };
+
+int readcallcount = 0;
 
 void
 syscall(void)
@@ -137,6 +145,14 @@ syscall(void)
   struct proc *p = myproc();
 
   num = p->trapframe->a7;
+  if(num == SYS_read)
+  {
+    readcallcount += 1;
+  }
+  else if(num == SYS_getreadcount)
+  {
+    p->readcount = readcallcount;
+  }
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
     // Use num to lookup the system call function for num, call it,
     // and store its return value in p->trapframe->a0

@@ -56,7 +56,12 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
+ifndef SCHEDULER
+    SCHEDULER:=DEFAULT
+endif
+
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -gdwarf-2
+CFLAGS += "-D$(SCHEDULER)"
 CFLAGS += -MD
 CFLAGS += -mcmodel=medany
 CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax
@@ -116,23 +121,26 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 .PRECIOUS: %.o
 
 UPROGS=\
-	$U/_cat\
-	$U/_echo\
-	$U/_forktest\
-	$U/_grep\
-	$U/_init\
-	$U/_kill\
-	$U/_ln\
-	$U/_ls\
-	$U/_mkdir\
-	$U/_rm\
-	$U/_sh\
-	$U/_stressfs\
-	$U/_usertests\
-	$U/_grind\
-	$U/_wc\
-	$U/_zombie\
-	$U/_schedulertest\
+    $U/_cat\
+    $U/_echo\
+    $U/_forktest\
+    $U/_grep\
+    $U/_init\
+    $U/_kill\
+    $U/_ln\
+    $U/_ls\
+    $U/_mkdir\
+    $U/_rm\
+    $U/_sh\
+    $U/_stressfs\
+    $U/_usertests\
+    $U/_grind\
+    $U/_wc\
+    $U/_zombie\
+    $U/_schedulertest\
+    $U/_test_1\
+    $U/_test_2\
+    $U/_alarmtest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
@@ -154,7 +162,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 	then echo "-gdb tcp::$(GDBPORT)"; \
 	else echo "-s -p $(GDBPORT)"; fi)
 ifndef CPUS
-CPUS := 3
+CPUS := 1
 endif
 
 QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic

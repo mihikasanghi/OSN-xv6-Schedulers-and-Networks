@@ -6,7 +6,7 @@ Running tests for this syscall is easy. Just do the following from
 inside the `initial-xv6` directory:
 
 ```sh
-prompt> ./test-getreadcounts.sh
+prompt> ./test-getreadcount.sh
 ```
 
 If you implemented things correctly, you should get some notification
@@ -28,7 +28,7 @@ You can suppress the repeated building of xv6 in the tests with the
 `-s` flag. This should make repeated testing faster:
 
 ```sh
-prompt> ./test-getreadcounts.sh -s
+prompt> ./test-getreadcount.sh -s
 ```
 
 ---

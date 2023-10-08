@@ -20,6 +20,96 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+// Define an array that maps priority levels to time values
+int priorityTimeValues[] = {1, 3, 9, 15};
+
+struct myMLFQ mlfq[4];
+
+void createMyMLFQ()
+{
+  // Iterate through each priority level in the multi-level feedback queue (mlfq)
+  for (int i = 0; i < 4; i++)
+  {
+    // Initialize the last index of the current priority queue to -1, indicating it's empty
+    mlfq[i].last = -1;
+
+    // Iterate through each potential process slot in the current priority queue
+    for (int j = 0; j < NPROC; j++)
+    {
+      // Initialize each process slot to null (using void pointer)
+      mlfq[i].procs[j] = (void *)0;
+    }
+  }
+}
+
+void push(struct proc *p, int priorNum)
+{
+  // Iterate through all processes in the current priority queue
+  for (int i = 0; i < mlfq[priorNum].last; i++)
+  {
+    // Check if the process is already in the queue by comparing PIDs
+    if (mlfq[priorNum].procs[i]->pid == p->pid)
+    {
+      // If the process is found, exit the function early
+      return;
+    }
+  }
+
+  // Update the tick count when the process entered the queue
+  p->queueEnteredAt = ticks;
+  // Set the priority level of the process
+  p->priority = priorNum;
+  // Mark the process as queued
+  p->queued = 1;
+  // Set the time the process has been in the queue,
+  // assuming a time quantum that is three times the priority level plus one
+  p->timeInQueue = (priorNum + 1) * 3;
+  // Increment the index of the last process in the priority queue
+  mlfq[priorNum].last++;
+  // Add the process to the end of the priority queue
+  mlfq[priorNum].procs[mlfq[priorNum].last] = p;
+
+  return;
+}
+
+void erase(struct proc *p, int priorNum)
+{
+  // Initialize a variable to store the index of the process in the queue
+  int indexOfProcess = -1;
+
+  // Iterate through all processes in the priority queue
+  for (int i = 0; i <= mlfq[priorNum].last; i++)
+  {
+    // Check if the process is already in the queue by comparing PIDs
+    if (p->pid == mlfq[priorNum].procs[i]->pid)
+    {
+      // If the process is found, store its index and break the loop
+      indexOfProcess = i;
+      break;
+    }
+  }
+
+  // Check if the process was not found in the queue
+  if (indexOfProcess == -1)
+  {
+    // If not found, exit the function early
+    return;
+  }
+
+  // Shift all processes in the queue down to overwrite the removed process
+  for (int i = indexOfProcess; i < mlfq[priorNum].last; i++)
+  {
+    mlfq[priorNum].procs[i] = mlfq[priorNum].procs[i + 1];
+  }
+
+  // Mark the process as not queued
+  p->queued = 0;
+  // Set the last process in the queue to null after the shift
+  mlfq[priorNum].procs[mlfq[priorNum].last] = (void *)0;
+  // Decrement the index of the last process in the priority queue
+  mlfq[priorNum].last--;
+}
+
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.
@@ -126,6 +216,20 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  // Getreadcount
+  p->readcount = 0;
+  // Sigalarm and sigreturn
+  p->handler = 0;
+  p->interval = 0;
+  p->tickscurrently = 0;
+  p->signalstatus = 0;
+  p->trapframealarm = 0;
+  // MLFQ scheduler
+  p->priority = 0;
+  p->queueEnteredAt = ticks;
+  p->queued = 0;
+  p->timeToNextQueue = 1;
+  p->timeInQueue = 0;
 
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0)
@@ -469,6 +573,8 @@ void scheduler(void)
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
+#ifdef DEFAULT
+
     for (p = proc; p < &proc[NPROC]; p++)
     {
       acquire(&p->lock);
@@ -487,6 +593,141 @@ void scheduler(void)
       }
       release(&p->lock);
     }
+#endif
+
+#ifdef FCFS
+    // Initialize a pointer to a process structure, minCreationTimeProcess, and set it to null (0).
+    // This will be used to keep track of the process with the minimum creation time.
+    struct proc *minCreationTimeProcess = 0;
+
+    // Iterate through the array of processes (proc) from the first process to the NPROC-th process.
+    // 'p' is a pointer that traverses through each process in the array.
+    for (p = proc; p < &proc[NPROC]; p++)
+    {
+      // Acquire the lock for the current process to ensure safe access to its data.
+      acquire(&p->lock);
+
+      // Check if the current process (pointed to by 'p') is in a RUNNABLE state.
+      if (p->state == RUNNABLE)
+      {
+        // Check if minCreationTimeProcess is null (first iteration) or if the current process has a smaller creation time (ctime) than minCreationTimeProcess.
+        // If so, update minCreationTimeProcess to point to the current process.
+        if (minCreationTimeProcess == 0)
+        {
+          minCreationTimeProcess = p;
+        }
+        else if (minCreationTimeProcess->ctime > p->ctime)
+        {
+          minCreationTimeProcess = p;
+        }
+      }
+
+      // Release the lock for the current process to allow other threads to access it.
+      release(&p->lock);
+    }
+
+    // Check if a process with the minimum creation time (minCreationTimeProcess) was found.
+    if (minCreationTimeProcess)
+    {
+      // Acquire the lock for the process pointed to by minCreationTimeProcess to ensure safe access to its data.
+      acquire(&minCreationTimeProcess->lock);
+
+      // Check if the state of the process pointed to by minCreationTimeProcess is still RUNNABLE.
+      if (minCreationTimeProcess->state == RUNNABLE)
+      {
+        // Update the state of the process pointed to by minCreationTimeProcess to RUNNING, indicating it is currently being executed.
+        minCreationTimeProcess->state = RUNNING;
+
+        // Assign the process pointed to by minCreationTimeProcess to the CPU's current process.
+        c->proc = minCreationTimeProcess;
+
+        // Perform a context switch to start executing the process pointed to by minCreationTimeProcess.
+        // This saves the current context of the CPU (c->context) and switches to the context of minCreationTimeProcess.
+        swtch(&c->context, &minCreationTimeProcess->context);
+
+        // After the process has finished executing, set the CPU's current process to null (0).
+        c->proc = 0;
+      }
+
+      // Release the lock for the process pointed to by minCreationTimeProcess to allow other threads to access it.
+      release(&minCreationTimeProcess->lock);
+    }
+
+#endif
+#ifdef MLFQ
+    // Update priorities and manage queuing
+    for (p = proc; p < &proc[NPROC]; p++)
+    {
+      // Acquire lock to ensure safe access to process p
+      acquire(&p->lock);
+
+      // Update priority and requeue if necessary
+      if (p->state == RUNNABLE && ticks - p->queueEnteredAt >= 30 && p->priority > 0)
+      {
+        // Remove process p from its current priority queue
+        erase(p, p->priority);
+        // Decrease the priority of process p
+        p->priority--;
+        // Add process p back into the updated priority queue
+        push(p, p->priority);
+      }
+
+      // Ensure process is queued if runnable
+      if (p->state == RUNNABLE && !p->queued)
+      {
+        // Add process p to the priority queue if it's not already queued
+        push(p, p->priority);
+      }
+
+      // Release lock to allow other threads to access process p
+      release(&p->lock);
+    }
+
+    // Select next process to run
+    struct proc *nectProcessToRun = 0;
+    for (int i = 0; i < 4 && !nectProcessToRun; i++)
+    {
+      // Continue until a runnable process is found or the queue is empty
+      while (mlfq[i].last > -1)
+      {
+        // Get the first process in the current priority queue
+        p = mlfq[i].procs[0];
+        // Remove process p from the current priority queue
+        erase(p, i);
+        // Acquire lock to ensure safe access to process p
+        acquire(&p->lock);
+
+        // Check if process p is runnable
+        if (p->state == RUNNABLE)
+        {
+          // If runnable, set nectProcessToRun and break the loop
+          nectProcessToRun = p;
+          break;
+        }
+
+        // Release lock to allow other threads to access process p
+        release(&p->lock);
+      }
+    }
+
+    // Execute the selected process
+    if (nectProcessToRun)
+    {
+      // Set the state of nectProcessToRun to RUNNING
+      nectProcessToRun->state = RUNNING;
+      // Set the time to the next queue based on the priority of nectProcessToRun
+      nectProcessToRun->timeToNextQueue = priorityTimeValues[nectProcessToRun->priority];
+      // Assign nectProcessToRun to the current CPU's process
+      c->proc = nectProcessToRun;
+      // Switch context to nectProcessToRun
+      swtch(&c->context, &nectProcessToRun->context);
+      // Set the current CPU's process to null
+      c->proc = 0;
+      // Release lock to allow other threads to access nectProcessToRun
+      release(&nectProcessToRun->lock);
+    }
+
+#endif
   }
 }
 
@@ -610,6 +851,10 @@ int kill(int pid)
     if (p->pid == pid)
     {
       p->killed = 1;
+// MLFQ scheduler
+#ifdef MLFQ
+      erase(p, p->priority);
+#endif
       if (p->state == SLEEPING)
       {
         // Wake process from sleep().
@@ -767,6 +1012,7 @@ void update_time()
     if (p->state == RUNNING)
     {
       p->rtime++;
+      p->timeToNextQueue--;
     }
     release(&p->lock);
   }
