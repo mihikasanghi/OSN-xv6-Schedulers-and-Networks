@@ -84,15 +84,15 @@ void usertrap(void)
   if (which_dev == 2)
   {
     // Get the current CPU structure
-    struct cpu *c = mycpu();
+    // struct cpu *c = mycpu();
 
 // If MLFQ scheduling is defined, print the priority of the current process
-#ifdef MLFQ
-    printf("%d ", c->proc->priority);
-#endif
+// #ifdef MLFQ
+//     printf("%d ", c->proc->priority);
+// #endif
 
     // Print the creation time and PID of the current process
-    printf("%d %d \n", c->proc->ctime, c->proc->pid);
+    // printf("%d %d \n", c->proc->ctime, c->proc->pid);
 
     // Check if the process has a positive interval for signaling
     if (p->interval > 0)
@@ -151,7 +151,11 @@ void usertrap(void)
     {
       // If the priority is less than 3, increment the priority
       if (p->priority < 3)
+      {
+        // printf("%d %d %d\n", p->pid, p->priority, ticks - 1);
         p->priority++;
+        // printf("%d %d %d\n", p->pid, p->priority, ticks);
+      }
 
       // Set the flag to reschedule the process
       scheduleProcessAgain = 1;

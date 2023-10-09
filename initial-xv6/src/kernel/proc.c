@@ -667,7 +667,10 @@ void scheduler(void)
         // Remove process p from its current priority queue
         erase(p, p->priority);
         // Decrease the priority of process p
+        // printf("%d %d %d\n", p->pid, p->priority, ticks - 1);
         p->priority--;
+        // printf("%d %d %d\n", p->pid, p->priority, ticks);
+
         // Add process p back into the updated priority queue
         push(p, p->priority);
       }
