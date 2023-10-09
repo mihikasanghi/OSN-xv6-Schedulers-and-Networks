@@ -7,7 +7,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
-#define SERVER_PORT 8897
+#define SERVER_PORT 8896
 #define BUFFER_LENGTH 1024
 #define INPUT_LENGTH 256
 

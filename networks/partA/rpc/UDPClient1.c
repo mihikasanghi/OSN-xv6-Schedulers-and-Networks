@@ -1,13 +1,13 @@
 #include <stdio.h>
+#include <netinet/in.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <sys/types.h>
-#include <sys/socket.h>
 
-#define SERVER_PORT 8897
+#define PORT 8800
 #define BUFFER_LENGTH 1024
 #define INPUT_LENGTH 256
 
@@ -24,74 +24,68 @@ char *retrieve_ip_address()
     char host_buffer[256];
     struct hostent *host_info;
 
-    // Get host name
     if (gethostname(host_buffer, sizeof(host_buffer)) != 0)
-        display_error("Unable to obtain IP address");
+        display_error("Error in obtaining IP address");
 
-    // Get host entry info
     host_info = gethostbyname(host_buffer);
     if (host_info == NULL)
-        display_error("Unable to obtain IP address");
+        display_error("Error in obtaining IP address");
 
     return inet_ntoa(*((struct in_addr *)host_info->h_addr_list[0]));
 }
 
 // Function to create a socket and return its file descriptor
-int initialize_socket()
+int create_socket()
 {
-    int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (socket_fd == -1)
         display_error("Socket creation failed");
     return socket_fd;
 }
 
-// Function to connect to the server using the provided socket file descriptor and server address
-void establish_connection(int socket_fd, struct sockaddr_in server_addr)
+// Function to configure the server address structure
+void configure_server_addr(struct sockaddr_in *server_addr, const char *ip_address)
 {
-    if (connect(socket_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
-        display_error("Connection to server failed");
+    server_addr->sin_family = AF_INET;
+    server_addr->sin_port = htons(PORT);
+    server_addr->sin_addr.s_addr = inet_addr(ip_address);
 }
 
 // Function to send a message to the server
-void transmit_message(int socket_fd, const char *message)
+void send_message_to_server(int socket_fd, const char *message, struct sockaddr_in *server_addr)
 {
-    if (send(socket_fd, message, strlen(message), 0) == -1)
-        display_error("Message transmission to server failed");
+    if (sendto(socket_fd, message, strlen(message), 0, (struct sockaddr *)server_addr, sizeof(*server_addr)) == -1)
+        display_error("Couldn't send message to server");
 }
 
 // Function to receive a message from the server
-void fetch_message(int socket_fd, char *server_reply)
+void receive_message_from_server(int socket_fd, char *buffer, struct sockaddr_in *server_addr)
 {
-    if (recv(socket_fd, server_reply, BUFFER_LENGTH, 0) < 0)
-        display_error("No data received from server");
+    socklen_t addr_size = sizeof(*server_addr);
+    if (recvfrom(socket_fd, buffer, BUFFER_LENGTH, 0, (struct sockaddr *)server_addr, &addr_size) < 0)
+        display_error("Nothing was received from server");
 }
 
 int main()
 {
     char *ip_address = retrieve_ip_address();
-    int socket_fd = initialize_socket();
-
+    int socket_fd = create_socket();
     struct sockaddr_in server_addr;
-    memset(&server_addr, '\0', sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = inet_addr(ip_address);
-    server_addr.sin_port = htons(SERVER_PORT);
-    establish_connection(socket_fd, server_addr);
+    configure_server_addr(&server_addr, ip_address);
 
     while (1)
     {
-
         char server_reply[BUFFER_LENGTH];
         char input[INPUT_LENGTH] = "";
         printf("ROCK(0) PAPER(1) SCISSORS(2)??\n");
         scanf("%s", input);
-        transmit_message(socket_fd, input);
-        fetch_message(socket_fd, server_reply);
+        send_message_to_server(socket_fd, input, &server_addr);
+        receive_message_from_server(socket_fd, server_reply, &server_addr);
         printf("%s\n", server_reply);
         server_reply[0] = input[0] = '\0';
         scanf("%s", input);
-        transmit_message(socket_fd, input);
-        fetch_message(socket_fd, server_reply);
+        send_message_to_server(socket_fd, input, &server_addr);
+        receive_message_from_server(socket_fd, server_reply, &server_addr);
         if (server_reply[0] == '0')
         {
             break;

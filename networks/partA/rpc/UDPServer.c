@@ -7,12 +7,12 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
-#define PORTA 8897
-#define PORTB 8896
+#define PORTA 8800
+#define PORTB 8801
 #define BUFFER_SIZE 1024
 
 // Function to display error message and exit the program
-void handle_error(const char *error_msg)
+void display_error(const char *error_msg)
 {
     printf("\033[1;31mERROR: %s\n\033[0m", error_msg);
     exit(EXIT_FAILURE);
@@ -25,66 +25,50 @@ char *get_host_ip()
     struct hostent *host_info;
 
     if (gethostname(host_buffer, sizeof(host_buffer)) != 0)
-        handle_error("Error in obtaining IP address");
+        display_error("Error in obtaining IP address");
 
     host_info = gethostbyname(host_buffer);
     if (host_info == NULL)
-        handle_error("Error in obtaining IP address");
+        display_error("Error in obtaining IP address");
 
     return inet_ntoa(*((struct in_addr *)host_info->h_addr_list[0]));
 }
 
 // Function to create a socket and return its file descriptor
-int create_server_socket()
+int create_udp_socket()
 {
-    int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (socket_fd == -1)
-        handle_error("Socket creation failed");
+        display_error("Socket creation failed");
     return socket_fd;
 }
 
 // Function to bind the socket to the server address
-void bind_server_socket(int socket_fd, struct sockaddr_in *server_addr)
+void bind_socket(int socket_fd, struct sockaddr_in *server_addr)
 {
     if (bind(socket_fd, (struct sockaddr *)server_addr, sizeof(*server_addr)) == -1)
-        handle_error("Couldn't bind socket");
-}
-
-// Function to listen for incoming connections
-void listen_for_connections(int socket_fd)
-{
-    if (listen(socket_fd, 5) == -1)
-        handle_error("Listening failed");
-}
-
-// Function to accept a client connection
-int accept_client_connection(int socket_fd, struct sockaddr_in *client_addr, socklen_t *addr_size)
-{
-    int connection_fd = accept(socket_fd, (struct sockaddr *)client_addr, addr_size);
-    if (connection_fd < 0)
-        handle_error("Couldn't establish connection");
-    return connection_fd;
+        display_error("Couldn't bind socket");
 }
 
 // Function to receive a message from the client
-void receive_client_message(int connection_fd, char *buffer)
+void receive_message(int socket_fd, char *buffer, struct sockaddr_in *client_addr, socklen_t *addr_size)
 {
-    if (recv(connection_fd, buffer, BUFFER_SIZE, 0) < 0)
-        handle_error("Nothing was received from client");
+    if (recvfrom(socket_fd, buffer, BUFFER_SIZE, 0, (struct sockaddr *)client_addr, addr_size) < 0)
+        display_error("Nothing was received from client");
 }
 
 // Function to send a message to the client
-void send_server_message(int connection_fd, const char *message)
+void send_message(int socket_fd, const char *message, struct sockaddr_in *client_addr)
 {
-    if (send(connection_fd, message, strlen(message), 0) == -1)
-        handle_error("Couldn't send message to client");
+    if (sendto(socket_fd, message, strlen(message), 0, (struct sockaddr *)client_addr, sizeof(*client_addr)) == -1)
+        display_error("Couldn't send message to client");
 }
 
 int main()
 {
     char *ip_address = get_host_ip();
-    int socket_fd_A = create_server_socket();
-    int socket_fd_B = create_server_socket();
+    int socket_fd_A = create_udp_socket();
+    int socket_fd_B = create_udp_socket();
     struct sockaddr_in server_addr_A, server_addr_B, client_addr_A, client_addr_B;
     socklen_t addr_size_A = sizeof(client_addr_A);
     socklen_t addr_size_B = sizeof(client_addr_B);
@@ -99,31 +83,20 @@ int main()
     server_addr_B.sin_port = htons(PORTB);
     server_addr_B.sin_addr.s_addr = INADDR_ANY;
 
-    bind_server_socket(socket_fd_A, &server_addr_A);
-    listen_for_connections(socket_fd_A);
-    int connection_fd_A = accept_client_connection(socket_fd_A, &client_addr_A, &addr_size_A);
-
-    bind_server_socket(socket_fd_B, &server_addr_B);
-    listen_for_connections(socket_fd_B);
-    int connection_fd_B = accept_client_connection(socket_fd_B, &client_addr_B, &addr_size_B);
+    bind_socket(socket_fd_A, &server_addr_A);
+    bind_socket(socket_fd_B, &server_addr_B);
 
     while (1)
     {
-        // connection_fd_A = accept_client_connection(socket_fd_A, &client_addr_A, &addr_size_A);
-        // connection_fd_B = accept_client_connection(socket_fd_B, &client_addr_B, &addr_size_B);
-
         char reply_A[BUFFER_SIZE], reply_B[BUFFER_SIZE];
         strcpy(reply_A, "");
         strcpy(reply_B, "");
 
-        // Recieving rock paper scissor from client A and B
-        receive_client_message(connection_fd_A, reply_A);
-        receive_client_message(connection_fd_B, reply_B);
+        receive_message(socket_fd_A, reply_A, &client_addr_A, &addr_size_A);
+        receive_message(socket_fd_B, reply_B, &client_addr_B, &addr_size_B);
 
         char *server_msg_to_A = (char *)calloc(256, sizeof(char));
         char *server_msg_to_B = (char *)calloc(256, sizeof(char));
-        // strcpy(server_msg, "Hello Client! Server has received your message.\0");
-        // send_server_message(connection_fd, server_msg);
 
         if (reply_A[0] == reply_B[0])
         {
@@ -144,33 +117,30 @@ int main()
         strcat(server_msg_to_A, "Would you like to play again? Y or N\n");
         strcat(server_msg_to_B, "Would you like to play again? Y or N\n");
 
-        // Sending the result to client A and B and asking if they want to play again
-        send_server_message(connection_fd_A, server_msg_to_A);
-        send_server_message(connection_fd_B, server_msg_to_B);
+        send_message(socket_fd_A, server_msg_to_A, &client_addr_A);
+        send_message(socket_fd_B, server_msg_to_B, &client_addr_B);
 
-        // Recieving the reply from client A and B if they want to continue
-        receive_client_message(connection_fd_A, reply_A);
-        receive_client_message(connection_fd_B, reply_B);
+        receive_message(socket_fd_A, reply_A, &client_addr_A, &addr_size_A);
+        receive_message(socket_fd_B, reply_B, &client_addr_B, &addr_size_B);
 
         if (reply_A[0] == 'Y' && reply_B[0] == 'Y')
         {
             strcpy(server_msg_to_A, "1");
             strcpy(server_msg_to_B, "1");
-            send_server_message(connection_fd_A, server_msg_to_A);
-            send_server_message(connection_fd_B, server_msg_to_B);
+            send_message(socket_fd_A, server_msg_to_A, &client_addr_A);
+            send_message(socket_fd_B, server_msg_to_B, &client_addr_B);
         }
         else
         {
             strcpy(server_msg_to_A, "0");
             strcpy(server_msg_to_B, "0");
-            send_server_message(connection_fd_A, server_msg_to_A);
-            send_server_message(connection_fd_B, server_msg_to_B);
+            send_message(socket_fd_A, server_msg_to_A, &client_addr_A);
+            send_message(socket_fd_B, server_msg_to_B, &client_addr_B);
+
             break;
         }
     }
-    close(connection_fd_A);
-    close(connection_fd_B);
+
     close(socket_fd_A);
-    close(socket_fd_B);
     return 0;
 }
